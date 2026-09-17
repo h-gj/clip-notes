@@ -84,8 +84,9 @@
     });
     editor.on("update", () => autoSave());
 
-    // 粘贴图片支持
-    editor.on("paste", (event) => {
+    // 粘贴图片支持（TipTap v3 的 paste 事件回调参数是 { event }，需解构取原生事件）
+    editor.on("paste", ({ event }) => {
+      if (!event || !event.clipboardData) return;
       const items = event.clipboardData.items;
       for(const item of items) {
         if(item.type.startsWith("image/")){
