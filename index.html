@@ -8,15 +8,14 @@
   <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
   <!-- TipTap 核心 -->
   <script type="module">
-    import { Editor } from 'https://esm.sh/@tiptap/core';
-    import StarterKit from 'https://esm.sh/@tiptap/starter-kit';
-    import Image from 'https://esm.sh/@tiptap/extension-image';
-    import CodeBlockLowlight from 'https://esm.sh/@tiptap/extension-code-block-lowlight';
-    import lowlight from 'https://esm.sh/lowlight';
-    import { html } from 'https://esm.sh/lowlight/dist/common.js';
-    import Markdown from 'https://esm.sh/@tiptap/extension-markdown';
+    import { Editor } from 'https://esm.sh/@tiptap/core@3';
+    import StarterKit from 'https://esm.sh/@tiptap/starter-kit@3';
+    import Image from 'https://esm.sh/@tiptap/extension-image@3';
+    import CodeBlockLowlight from 'https://esm.sh/@tiptap/extension-code-block-lowlight@3';
+    import { createLowlight, common } from 'https://esm.sh/lowlight';
 
-    lowlight.register(html);
+    // lowlight v3 API：createLowlight(common) 已注册常用语言
+    const lowlight = createLowlight(common);
 
     // IndexedDB 简易封装
     const DB_NAME = "NoteDB";
@@ -110,11 +109,60 @@
       }
     }
     document.querySelector("#btnExportMd").onclick = () => {
-      const md = editor.storage.markdown.getMarkdown();
-      downloadFile("note.md", md);
+      downloadFile("note.md", htmlToMarkdown(editor.getHTML()));
     }
     document.querySelector("#btnExportHtml").onclick = () => {
       downloadFile("note.html", editor.getHTML());
+    }
+    // 轻量 HTML → Markdown 转换（@tiptap/extension-markdown 包不存在，本地实现）
+    function htmlToMarkdown(html) {
+      const root = new DOMParser().parseFromString(html, "text/html").body;
+      function children(n) {
+        return Array.from(n.childNodes).map(nodeToMd).join("");
+      }
+      function liText(li) {
+        const nested = Array.from(li.children).filter(c => ["UL","OL"].includes(c.tagName));
+        const text = Array.from(li.childNodes)
+          .filter(n => !(n.nodeType === 1 && ["UL","OL"].includes(n.tagName)))
+          .map(nodeToMd).join("").trim();
+        let out = text;
+        for (const nl of nested) {
+          out += "\n" + nodeToMd(nl).trimEnd().split("\n").map(l => "  " + l).join("\n");
+        }
+        return out;
+      }
+      function nodeToMd(n) {
+        if (n.nodeType === Node.TEXT_NODE) return n.textContent;
+        if (n.nodeType !== Node.ELEMENT_NODE) return "";
+        const kids = children(n);
+        switch (n.tagName) {
+          case "H1": return "# " + kids.trim() + "\n\n";
+          case "H2": return "## " + kids.trim() + "\n\n";
+          case "H3": return "### " + kids.trim() + "\n\n";
+          case "H4": return "#### " + kids.trim() + "\n\n";
+          case "H5": return "##### " + kids.trim() + "\n\n";
+          case "H6": return "###### " + kids.trim() + "\n\n";
+          case "P": return kids + "\n\n";
+          case "BR": return "\n";
+          case "STRONG": case "B": return "**" + kids + "**";
+          case "EM": case "I": return "*" + kids + "*";
+          case "S": case "DEL": return "~~" + kids + "~~";
+          case "CODE": return n.closest("pre") ? kids : "`" + kids + "`";
+          case "PRE": {
+            const code = n.querySelector("code");
+            const lang = code ? ((code.className.match(/language-([\w-]+)/) || [])[1] || "") : "";
+            return "```" + lang + "\n" + (code ? code.textContent : n.textContent).replace(/\n$/, "") + "\n```\n\n";
+          }
+          case "UL": return Array.from(n.children).filter(c => c.tagName === "LI").map(c => "- " + liText(c)).join("\n") + "\n\n";
+          case "OL": return Array.from(n.children).filter(c => c.tagName === "LI").map((c, i) => (i + 1) + ". " + liText(c)).join("\n") + "\n\n";
+          case "BLOCKQUOTE": return kids.trim().split("\n").map(l => "> " + l).join("\n") + "\n\n";
+          case "HR": return "---\n\n";
+          case "A": return "[" + kids + "](" + (n.getAttribute("href") || "") + ")";
+          case "IMG": return "![" + (n.getAttribute("alt") || "") + "](" + (n.getAttribute("src") || "") + ")";
+          default: return kids;
+        }
+      }
+      return children(root).replace(/\n{3,}/g, "\n\n").trim() + "\n";
     }
     function downloadFile(name, text){
       const blob = new Blob([text], {type:"text/plain"});
