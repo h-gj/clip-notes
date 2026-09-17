@@ -66,7 +66,8 @@
       element: $editor,
       extensions: [
         StarterKit.configure({ codeBlock: false }),
-        Image,
+        // TipTap v3 默认拒绝解析 data: URI 图片（parseHTML 排除 src^="data:"），必须开启 allowBase64 才能还原粘贴的本地图片
+        Image.configure({ allowBase64: true }),
         CodeBlockLowlight.configure({ lowlight }),
       ],
       content: await loadContent(),
